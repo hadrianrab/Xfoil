@@ -11,11 +11,11 @@ VERSION := $(shell sed -n 's/^\#define APP_VERSION "\(.*\)"/\1/p' source/main.c)
 .PHONY: all
 all: xfoil.nro
 
-xfoil.elf: source/main.c vendor/cjson/cJSON.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -specs=$(DEVKITPRO)/libnx/switch.specs $^ -L$(PORTLIBS)/lib -L$(DEVKITPRO)/libnx/lib -lcurl -lz -lnx -lm -o $@
+xfoil.elf: source/main.c vendor/cjson/cJSON.c source/hud.inc source/ui_assets.inc
+	$(CC) $(CPPFLAGS) $(CFLAGS) -specs=$(DEVKITPRO)/libnx/switch.specs $(filter %.c,$^) -L$(PORTLIBS)/lib -L$(DEVKITPRO)/libnx/lib -lcurl -lz -lnx -lm -o $@
 
 xfoil.nacp: source/main.c
 	nacptool --create "Xfoil" "IndicaX" "$(VERSION)" $@
 
-xfoil.nro: xfoil.elf xfoil.nacp
-	elf2nro $< $@ --nacp=xfoil.nacp
+xfoil.nro: xfoil.elf xfoil.nacp icon.jpg
+	elf2nro $< $@ --icon=icon.jpg --nacp=xfoil.nacp
