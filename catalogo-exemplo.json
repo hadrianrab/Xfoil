@@ -1,0 +1,12 @@
+{
+  "files": [
+    {
+      "size": 39,
+      "url": "https://example.com/arquivo-teste.txt",
+      "file": "arquivo-teste.txt",
+      "game": "Exemplo",
+      "title": "Arquivo de teste",
+      "sha256": "0ba5b989a78feb8b801eb92174d8c8392755d1197f630e68a25f74ba8b0b7dc3"
+    }
+  ]
+}

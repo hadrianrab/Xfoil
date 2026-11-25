@@ -1,4 +1,4 @@
-# Xfoil 0.2.0
+# Xfoil 0.2.1
 
 Abra Xfoil pelo Homebrew Menu. X edita o endereco, R alterna
 entre quatro servidores, Y carrega o catalogo, L busca e A abre detalhes.

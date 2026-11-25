@@ -10,7 +10,7 @@
 #include "cJSON.h"
 
 #define DATA "sdmc:/switch/xfoil"
-#define APP_VERSION "0.2.0"
+#define APP_VERSION "0.2.1"
 #define DOWNLOADS DATA "/downloads"
 #define URL_CAP 1024
 #define MAX_ITEMS 500
@@ -30,7 +30,7 @@ typedef struct {
 } Transfer;
 
 static PadState pad;
-static Item items[MAX_ITEMS];
+static Item *items;
 static size_t count;
 static char sources[4][URL_CAP], status[160], filter[97];
 
@@ -167,16 +167,25 @@ static void load_catalog(const char *source)
     CURLcode result = transfer_file(source, &transfer);
     size_t length = CATALOG_LIMIT - transfer.remaining;
     char *json = result == CURLE_OK ? malloc(length + 1) : NULL;
-    count = 0;
+    Item *replacement = NULL;
+    size_t valid_count = 0;
+    bool valid_catalog = false;
     if (json && !fseek(file, 0, SEEK_SET) && fread(json, 1, length, file) == length) {
         json[length] = 0;
         cJSON *root = cJSON_ParseWithLengthOpts(json, length + 1, NULL, true);
         const cJSON *list = cJSON_GetObjectItemCaseSensitive(root, "files");
         const cJSON *entry;
         if (cJSON_IsArray(list)) {
-            cJSON_ArrayForEach(entry, list) {
-                if (count == MAX_ITEMS) break;
-                if (read_item(&items[count], entry)) ++count;
+            size_t capacity = (size_t)cJSON_GetArraySize(list);
+            if (capacity > MAX_ITEMS) capacity = MAX_ITEMS;
+            if (capacity) replacement = malloc(capacity * sizeof *replacement);
+            valid_catalog = !capacity || replacement;
+            if (replacement) {
+                cJSON_ArrayForEach(entry, list) {
+                    if (valid_count == capacity) break;
+                    if (read_item(&replacement[valid_count], entry)) ++valid_count;
+                }
+                valid_catalog = valid_count > 0;
             }
         }
         cJSON_Delete(root);
@@ -184,10 +193,17 @@ static void load_catalog(const char *source)
     free(json);
     fclose(file);
     remove(path);
-    if (result == CURLE_OK)
+    if (valid_catalog) {
+        free(items);
+        items = replacement;
+        count = valid_count;
         snprintf(status, sizeof status, "%zu arquivos com tamanho e SHA-256 validos.", count);
-    else
+    } else if (result != CURLE_OK) {
         snprintf(status, sizeof status, "Catalogo: %s.", curl_easy_strerror(result));
+    } else {
+        free(replacement);
+        snprintf(status, sizeof status, "Catalogo invalido ou memoria insuficiente.");
+    }
 }
 
 static bool verify_file(const char *path, const Item *item)
@@ -320,14 +336,17 @@ int main(void)
         }
     }
     size_t selected = 0, server = 0, matches = 0, visible[MAX_ITEMS];
-    bool confirm = false, redraw = true;
+    bool confirm = false, redraw = true, refresh_matches = true;
     while (appletMainLoop()) {
-        if (redraw) {
+        if (refresh_matches) {
             matches = 0;
             for (size_t i = 0; i < count; ++i)
                 if (contains(items[i].title, filter) || contains(items[i].game, filter))
                     visible[matches++] = i;
             if (selected >= matches) selected = 0;
+            refresh_matches = false;
+        }
+        if (redraw) {
             consoleClear();
             printf("\x1b[36mXfoil\x1b[0m  " APP_VERSION "\n\n");
             if (confirm && matches) {
@@ -357,14 +376,18 @@ int main(void)
         } else if (!confirm) {
             if (buttons & HidNpadButton_R) {
                 server = (server + 1) % 4;
+                free(items);
+                items = NULL;
                 count = 0;
+                refresh_matches = true;
                 filter[0] = 0;
                 snprintf(status, sizeof status, "Pressione Y para carregar este servidor.");
             }
             if ((buttons & HidNpadButton_AnyDown) && selected + 1 < matches) ++selected;
             if ((buttons & HidNpadButton_AnyUp) && selected) --selected;
             if ((buttons & HidNpadButton_A) && matches) confirm = true;
-            if (buttons & HidNpadButton_L) keyboard(filter, sizeof filter, "Buscar jogo ou arquivo");
+            if ((buttons & HidNpadButton_L) && keyboard(filter, sizeof filter, "Buscar jogo ou arquivo"))
+                refresh_matches = true;
             if (buttons & HidNpadButton_X) {
                 char address[URL_CAP];
                 memcpy(address, sources[server], sizeof address);
@@ -373,7 +396,10 @@ int main(void)
                         snprintf(status, sizeof status, "URL HTTPS invalida.");
                     } else {
                         memcpy(sources[server], address, sizeof address);
+                        free(items);
+                        items = NULL;
                         count = 0;
+                        refresh_matches = true;
                         char path[80];
                         snprintf(path, sizeof path, DATA "/servidor-%zu.txt", server + 1);
                         FILE *config = fopen(path, "w");
@@ -394,12 +420,14 @@ int main(void)
                     printf("Carregando catalogo. Pressione B para cancelar.\n");
                     consoleUpdate(NULL);
                     load_catalog(sources[server]);
+                    refresh_matches = true;
                 } else snprintf(status, sizeof status, "Informe primeiro um servidor HTTPS com X.");
             }
         }
         redraw |= buttons != 0;
         svcSleepThread(16000000);
     }
+    free(items);
     curl_global_cleanup();
     consoleExit(NULL);
     return 0;
